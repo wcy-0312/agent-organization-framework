@@ -416,6 +416,25 @@ def print_report(path, status, rule_results):
 
 
 # ---------------------------------------------------------------------------
+# Repository root detection
+# ---------------------------------------------------------------------------
+
+def find_repo_root(start_path):
+    """Find the repository root by walking upward until .agent-org/ exists."""
+    current = os.path.abspath(os.path.dirname(start_path))
+
+    while True:
+        if os.path.isdir(os.path.join(current, ".agent-org")):
+            return current
+
+        parent = os.path.dirname(current)
+        if parent == current:
+            raise ValueError("Could not find repository root containing .agent-org/")
+
+        current = parent
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -435,6 +454,7 @@ def main():
 
     try:
         record = load_record(path)
+        base_dir = find_repo_root(path)
     except FileNotFoundError:
         print(f"✗ File not found: {path}")
         sys.exit(1)
@@ -444,8 +464,6 @@ def main():
     except ValueError as e:
         print(f"✗ {e}")
         sys.exit(1)
-
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(path)))
     rule_results, status = validate(record, path, base_dir, skip_filesystem=skip_filesystem)
     error_count = print_report(path, status, rule_results)
     sys.exit(0 if error_count == 0 else 1)
