@@ -58,6 +58,8 @@ project-root/
 - [x] `plan-formulation` skill — turns rough ideas into reviewable plan documents and canonical handoff packages
 - [x] `schemas/plan-handoff-package-v1.md` — interface contract between plan-formulation and create-agent-organization
 - [x] `create-agent-organization` skill — generates `.agent-org/` from a finalized plan
+- [x] `checkpoint-review` skill — closes execution phases: classifies staging-buffer, produces minimal handoff-package, guides Verifier audit, archives checkpoint, and resets for next phase
+- [x] `schemas/checkpoint-review-v1.md` — interface contract for checkpoint-review outputs
 - [x] All 10 governance templates (`templates/`)
 - [x] Layer documentation (`docs/`)
 
@@ -99,10 +101,10 @@ Does the memory layer eventually need embedding-based retrieval? Current design 
 
 ## Roadmap
 
-**v0.2 — Checkpoint Review Skill**
+✅ **v0.2 — Checkpoint Review Skill** _(complete)_
 A skill that guides the Orchestrator through staging-buffer classification, handoff-package production, and archive management.
 
-**v0.3 — Replanning Skill**
+**v0.3 — Replanning Skill** ← _current target_
 A skill that classifies a finding's severity and executes the appropriate replanning protocol.
 
 **v0.4 — Team Evolution Skill**
