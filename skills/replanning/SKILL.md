@@ -86,6 +86,16 @@ AND the replanning-report records the approval in `changes_applied[*].approval_r
 
 ### Phase 1 — Escalation Intake & Severity Confirmation
 
+Before reading the review report, verify that
+`archive/checkpoint-N/review-report.md` exists and contains a valid `escalation`
+block. If either condition is not met, halt immediately and tell the Orchestrator:
+
+> "No valid checkpoint-review escalation source was found. Run
+> `checkpoint-review` first, then invoke replanning from the resulting
+> `review-report.md`."
+
+Do not attempt ad-hoc replanning without a review-report escalation source.
+
 Read `archive/checkpoint-N/review-report.md` in full. The `escalation` block is
 the authoritative intake. The rest of the report is supporting context.
 
@@ -127,9 +137,11 @@ to be mission-level, surface that and reclassify before continuing.
   mission-level change is necessary (not just plan-level)
 - Present this analysis to the Orchestrator and ask for **Gate 1**:
   _"Do I have permission to draft a mission revision?"_
-- If **denied**: write `replanning-report.md` with
-  `human_approval.permission_to_draft = denied` and `result.status = blocked`.
-  Do not modify `current/handoff-package.md`. Stop.
+- If **denied**: move to Phase 4 with
+  `human_approval.permission_to_draft = denied`,
+  `approval_to_apply = pending`,
+  and `result.status = blocked`.
+  Do not modify `mission-contract.md` or `current/handoff-package.md`.
 - If **confirmed**: continue to Phase 3
 
 ---
@@ -162,6 +174,26 @@ authorize application.
 
 Apply changes based on severity and approval state. Execute steps in order.
 
+**Archive consistency check**
+
+Before applying any changes or writing any files in this phase, verify that
+`archive/checkpoint-N/replanning-report.md` does not already exist. If it does,
+halt immediately:
+```
+REPLANNING_REPORT_EXISTS_ERROR
+archive/checkpoint-<N>/replanning-report.md already exists.
+v0.1 allows only one replanning-report per checkpoint.
+Manual inspection required before proceeding.
+```
+Do not overwrite. Do not create a second report under a different name.
+
+**Major — Gate 1 denied path:**
+1. Write `archive/checkpoint-N/replanning-report.md`
+   (`result.status = blocked`, `human_approval.permission_to_draft = denied`)
+2. Do not modify `mission-contract.md`
+3. Do not modify `current/handoff-package.md`
+4. Append `memory/decision-log.md` noting the blocked replanning attempt
+
 **Moderate path:**
 1. Update `current/handoff-package.md` with revised next-stage starting point
 2. Write `archive/checkpoint-N/replanning-report.md` (`result.status = adjusted`)
@@ -187,17 +219,6 @@ Apply changes based on severity and approval state. Execute steps in order.
    (`result.status = pending_human_approval`)
 2. Do not modify `mission-contract.md` or `current/handoff-package.md`
 3. Tell the Orchestrator exactly what approval is needed before proceeding
-
-**Archive consistency check** — before writing the replanning report, verify
-that `archive/checkpoint-N/replanning-report.md` does not already exist. If it
-does, halt immediately:
-```
-REPLANNING_REPORT_EXISTS_ERROR
-archive/checkpoint-<N>/replanning-report.md already exists.
-v0.1 allows only one replanning-report per checkpoint.
-Manual inspection required before proceeding.
-```
-Do not overwrite. Do not create a second report under a different name.
 
 ---
 
