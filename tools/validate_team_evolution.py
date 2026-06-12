@@ -34,11 +34,20 @@ except ImportError:
 VALID_STATUSES = {
     "rejected_invalid_trigger",
     "no_change_recommended",
+    "deferred_insufficient_evidence",
     "stopped_mission_impact",
     "stopped_governance_impact",
     "proposal_ready",
     "applied",
     "rolled_back",
+}
+
+VALID_RECOMMENDED_FOLLOWUP = {
+    "none",
+    "reroute_to_replanning",
+    "collect_additional_evidence",
+    "wait_until_next_checkpoint",
+    "human_review",
 }
 
 OUTCOME_MATRIX = {
@@ -52,6 +61,15 @@ OUTCOME_MATRIX = {
         "archive_files_referenced": [],
     },
     "no_change_recommended": {
+        "patch_generated": False,
+        "roster_modified": False,
+        "snapshot_available": False,
+        "rollback_applied": False,
+        "active_files_modified": [],
+        "archive_files_created": ["team-evolution-report.md"],
+        "archive_files_referenced": [],
+    },
+    "deferred_insufficient_evidence": {
         "patch_generated": False,
         "roster_modified": False,
         "snapshot_available": False,
@@ -117,6 +135,7 @@ ALLOWED_ACTIVE_FILES = {"team-roster.md"}
 STATUSES_REQUIRING_EMPTY_ACTIVE = {
     "rejected_invalid_trigger",
     "no_change_recommended",
+    "deferred_insufficient_evidence",
     "stopped_mission_impact",
     "stopped_governance_impact",
     "proposal_ready",
@@ -581,6 +600,125 @@ def rule10_operation_legality(outcome, base_dir, metadata):
     return errors
 
 
+def rule11_team_context_patch(outcome, base_dir, metadata):
+    """Check team_context_patch_generated consistency.
+
+    - If status = applied and team_context_patch_generated = true:
+        active_files_modified must contain current/team-context-patch.md.
+    - If status = rolled_back and the application record has
+        team_context_patch_generated = true:
+        the rollback record must have team_context_patch_removed = true.
+    """
+    status = outcome.get("status")
+    errors = []
+
+    if status == "applied":
+        tcp_generated = outcome.get("team_context_patch_generated")
+        if tcp_generated is True:
+            active = outcome.get("active_files_modified") or []
+            found = any("team-context-patch.md" in str(p) for p in active)
+            if not found:
+                errors.append(
+                    "TEAM_CONTEXT_PATCH_MISSING — team_context_patch_generated = true "
+                    "but current/team-context-patch.md not found in active_files_modified"
+                )
+
+    if status == "rolled_back":
+        checkpoint_id = (metadata or {}).get("checkpoint_id", "")
+        app_path = resolve_artifact_path(
+            "team-evolution-application.md", base_dir, checkpoint_id
+        )
+        try:
+            application = load_record(app_path)
+        except (FileNotFoundError, ValueError, yaml.YAMLError):
+            return errors
+
+        if application.get("team_context_patch_generated") is True:
+            rollback_path = resolve_artifact_path(
+                "team-evolution-rollback.md", base_dir, checkpoint_id
+            )
+            try:
+                rollback = load_record(rollback_path)
+            except (FileNotFoundError, ValueError, yaml.YAMLError):
+                return errors
+
+            if rollback.get("team_context_patch_removed") is not True:
+                errors.append(
+                    "TEAM_CONTEXT_PATCH_NOT_REMOVED — application.team_context_patch_generated = true "
+                    "but rollback.team_context_patch_removed is not true"
+                )
+
+    return errors
+
+
+def rule12_recommended_followup(record):
+    """Check recommended_followup field validity and loop prevention.
+
+    - Value must be in VALID_RECOMMENDED_FOLLOWUP.
+    - If trigger_source_type = replanning_output, value must not be
+      reroute_to_replanning (loop prevention).
+    """
+    # recommended_followup may live at record root or under a "recommended_followup" section key.
+    # Support both access patterns.
+    section = record.get("recommended_followup")
+    if isinstance(section, dict):
+        followup = section.get("recommended_followup")
+    else:
+        followup = section
+
+    if followup is None:
+        return []  # Field absent — not enforced as mandatory here
+
+    errors = []
+
+    if followup not in VALID_RECOMMENDED_FOLLOWUP:
+        errors.append(
+            f"INVALID_RECOMMENDED_FOLLOWUP — '{followup}' is not a valid value; "
+            f"expected one of: {', '.join(sorted(VALID_RECOMMENDED_FOLLOWUP))}"
+        )
+
+    trigger = record.get("trigger") or {}
+    trigger_source_type = trigger.get("trigger_source_type")
+    if trigger_source_type == "replanning_output" and followup == "reroute_to_replanning":
+        errors.append(
+            "LOOP_PREVENTION_VIOLATION — recommended_followup = reroute_to_replanning "
+            "is forbidden when trigger_source_type = replanning_output"
+        )
+
+    return errors
+
+
+def rule13_human_approval_required(record):
+    """Check human_approval_required is set correctly for high-impact changes.
+
+    - change_type = DEPRECATE_ROLE → human_approval_required must be true.
+    - requested_mode = rollback → human_approval_required must be true.
+    """
+    trigger = record.get("trigger") or {}
+    proposed_change = record.get("proposed_change") or {}
+    human_approval = record.get("human_approval") or {}
+
+    change_type = proposed_change.get("change_type")
+    requested_mode = trigger.get("requested_mode")
+    human_approval_required = human_approval.get("human_approval_required")
+
+    errors = []
+
+    if change_type == "DEPRECATE_ROLE" and human_approval_required is not True:
+        errors.append(
+            "APPROVAL_REQUIRED_MISSING — change_type = DEPRECATE_ROLE requires "
+            "human_approval_required = true"
+        )
+
+    if requested_mode == "rollback" and human_approval_required is not True:
+        errors.append(
+            "APPROVAL_REQUIRED_MISSING — requested_mode = rollback requires "
+            "human_approval_required = true"
+        )
+
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Validator
 # ---------------------------------------------------------------------------
@@ -589,6 +727,7 @@ def validate(record, path, base_dir, skip_filesystem=False):
     """Run all rules. Returns (results, status)."""
     outcome = record.get("outcome") or {}
     metadata = record.get("metadata") or {}
+    # Note: rule12 and rule13 receive the full record to access trigger/proposed_change/human_approval sections.
     status = outcome.get("status", "<missing>")
 
     rule_results = []
@@ -620,6 +759,9 @@ def validate(record, path, base_dir, skip_filesystem=False):
 
     run(9, "patch changes_count consistency", rule9_changes_count(outcome, base_dir, metadata))
     run(10, "patch operation legality", rule10_operation_legality(outcome, base_dir, metadata))
+    run(11, "team_context_patch consistency", rule11_team_context_patch(outcome, base_dir, metadata))
+    run(12, "recommended_followup validity", rule12_recommended_followup(record))
+    run(13, "human_approval_required for high-impact changes", rule13_human_approval_required(record))
 
     return rule_results, status
 
