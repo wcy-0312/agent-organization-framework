@@ -62,12 +62,16 @@ Every checkpoint-review execution produces or modifies the following files, in o
 | File | Action | Condition |
 |------|--------|-----------|
 | `archive/checkpoint-N/staging-buffer.md` | Write (copy of current) | Always |
-| `archive/checkpoint-N/handoff-package.md` | Write (copy of current) | Always |
+| `archive/checkpoint-N/handoff-package.md` | Write (newly produced) | Always |
 | `archive/checkpoint-N/review-report.md` | Write (new) | Always |
 | `current/handoff-package.md` | Overwrite | Always |
 | `current/staging-buffer.md` | Reset to empty | Always |
 | `discard-log.md` | Append | Only if entries classified `discard` exist |
 | `memory/decision-log.md` | Append | Only under strict conditions — see §10 |
+
+**`archive/checkpoint-N/handoff-package.md`** is the newly verified handoff package
+produced during this checkpoint review, not the pre-review handoff package that
+existed in `current/` before this review began.
 
 **`archive/checkpoint-N/`** must be created atomically: all three archive files must
 be written before `current/` files are modified. If the skill is interrupted between
