@@ -677,8 +677,7 @@ def rule12_recommended_followup(record):
             f"expected one of: {', '.join(sorted(VALID_RECOMMENDED_FOLLOWUP))}"
         )
 
-    trigger = record.get("trigger") or {}
-    trigger_source_type = trigger.get("trigger_source_type")
+    trigger_source_type = record.get("trigger_source_type")
     if trigger_source_type == "replanning_output" and followup == "reroute_to_replanning":
         errors.append(
             "LOOP_PREVENTION_VIOLATION — recommended_followup = reroute_to_replanning "
@@ -694,13 +693,9 @@ def rule13_human_approval_required(record):
     - change_type = DEPRECATE_ROLE → human_approval_required must be true.
     - requested_mode = rollback → human_approval_required must be true.
     """
-    trigger = record.get("trigger") or {}
-    proposed_change = record.get("proposed_change") or {}
-    human_approval = record.get("human_approval") or {}
-
-    change_type = proposed_change.get("change_type")
-    requested_mode = trigger.get("requested_mode")
-    human_approval_required = human_approval.get("human_approval_required")
+    change_type = record.get("change_type")
+    requested_mode = record.get("requested_mode")
+    human_approval_required = record.get("human_approval_required")
 
     errors = []
 
