@@ -15,6 +15,7 @@ Exit codes:
 
 import argparse
 import os
+import re
 import sys
 
 try:
@@ -316,6 +317,49 @@ def rule5_checkpoint_scope(outcome, metadata):
     return errors
 
 
+def resolve_artifact_path(filename, base_dir, checkpoint_id):
+    """Build the canonical path for an artifact file within a checkpoint archive."""
+    return os.path.join(base_dir, ".agent-org", "archive", checkpoint_id, filename)
+
+
+def _find_archive_file(filename, outcome, base_dir, checkpoint_id):
+    """Locate a file by basename in archive_files_created or archive_files_referenced.
+
+    Falls back to resolve_artifact_path if the filename is not found in either list.
+    """
+    all_files = list(outcome.get("archive_files_created") or []) + \
+                list(outcome.get("archive_files_referenced") or [])
+    agent_org_dir = os.path.join(base_dir, ".agent-org")
+    for path in all_files:
+        if os.path.basename(path) == filename:
+            normalised = path.replace("\\", "/")
+            if normalised.startswith(".agent-org/"):
+                return os.path.join(base_dir, normalised)
+            else:
+                return os.path.join(agent_org_dir, normalised)
+    return resolve_artifact_path(filename, base_dir, checkpoint_id)
+
+
+def _extract_machine_change_block(content):
+    """Find and parse the fenced block with marker 'yaml team-evolution-changes'.
+
+    Returns the changes list (possibly empty) on success, or None if the block
+    is absent or appears more than once.
+    """
+    pattern = r'```yaml team-evolution-changes\r?\n(.*?)```'
+    matches = re.findall(pattern, content, re.DOTALL)
+    if len(matches) != 1:
+        return None
+    try:
+        parsed = yaml.safe_load(matches[0])
+        if not isinstance(parsed, dict):
+            return None
+        changes = parsed.get("changes")
+        return changes if changes is not None else []
+    except yaml.YAMLError:
+        return None
+
+
 def rule6_referenced_artifacts_exist(outcome, metadata, base_dir):
     """Check that every file in archive_files_referenced actually exists on disk.
 
@@ -351,6 +395,192 @@ def rule6_referenced_artifacts_exist(outcome, metadata, base_dir):
     return errors
 
 
+def rule7_hash_fields(outcome, base_dir, metadata):
+    """Check that mandatory hash fields are present in state artifacts.
+
+    Triggered when outcome.status is 'applied' or 'rolled_back'.
+    For 'applied': verifies patch_sha256, snapshot_sha256, applied_roster_sha256
+                   in team-evolution-application.md.
+    For 'rolled_back': verifies restored_from_snapshot_sha256, current_roster_sha256
+                       in team-evolution-rollback.md.
+    """
+    status = outcome.get("status")
+    if status not in {"applied", "rolled_back"}:
+        return []
+
+    checkpoint_id = (metadata or {}).get("checkpoint_id", "")
+    errors = []
+
+    if status == "applied":
+        path = resolve_artifact_path("team-evolution-application.md", base_dir, checkpoint_id)
+        try:
+            artifact = load_record(path)
+        except (FileNotFoundError, ValueError, yaml.YAMLError):
+            return []
+        for field in ("patch_sha256", "snapshot_sha256", "applied_roster_sha256"):
+            if not artifact.get(field):
+                errors.append(
+                    f"MISSING_HASH_FIELD — {field} is required for status 'applied'"
+                )
+
+    elif status == "rolled_back":
+        path = resolve_artifact_path("team-evolution-rollback.md", base_dir, checkpoint_id)
+        try:
+            artifact = load_record(path)
+        except (FileNotFoundError, ValueError, yaml.YAMLError):
+            return []
+        for field in ("restored_from_snapshot_sha256", "current_roster_sha256"):
+            if not artifact.get(field):
+                errors.append(
+                    f"MISSING_HASH_FIELD — {field} is required for status 'rolled_back'"
+                )
+
+    return errors
+
+
+def rule8_rollback_hash(outcome, base_dir, metadata):
+    """Check cross-artifact hash consistency for rollback records.
+
+    Triggered when outcome.status is 'rolled_back'.
+    Verifies:
+    1. rollback.restored_from_snapshot_sha256 == application.snapshot_sha256
+    2. rollback.current_roster_sha256 == rollback.restored_from_snapshot_sha256
+    """
+    status = outcome.get("status")
+    if status != "rolled_back":
+        return []
+
+    checkpoint_id = (metadata or {}).get("checkpoint_id", "")
+    errors = []
+
+    app_path = _find_archive_file("team-evolution-application.md", outcome, base_dir, checkpoint_id)
+    rollback_path = resolve_artifact_path("team-evolution-rollback.md", base_dir, checkpoint_id)
+
+    try:
+        application = load_record(app_path)
+    except (FileNotFoundError, ValueError, yaml.YAMLError):
+        return []
+
+    try:
+        rollback = load_record(rollback_path)
+    except (FileNotFoundError, ValueError, yaml.YAMLError):
+        return []
+
+    app_snapshot_sha256 = application.get("snapshot_sha256") or ""
+    rollback_restored_sha256 = rollback.get("restored_from_snapshot_sha256") or ""
+    rollback_current_sha256 = rollback.get("current_roster_sha256") or ""
+
+    if app_snapshot_sha256 and rollback_restored_sha256:
+        if rollback_restored_sha256 != app_snapshot_sha256:
+            errors.append(
+                "HASH_MISMATCH — rollback.restored_from_snapshot_sha256 does not match "
+                "application.snapshot_sha256"
+            )
+
+    if rollback_restored_sha256 and rollback_current_sha256:
+        if rollback_current_sha256 != rollback_restored_sha256:
+            errors.append(
+                "HASH_MISMATCH — rollback.current_roster_sha256 does not match "
+                "rollback.restored_from_snapshot_sha256"
+            )
+
+    return errors
+
+
+def rule9_changes_count(outcome, base_dir, metadata):
+    """Check that front matter changes_count matches the Machine Change Block length.
+
+    Triggered when outcome.status is 'proposal_ready', 'applied', or 'rolled_back'.
+    """
+    status = outcome.get("status")
+    if status not in {"proposal_ready", "applied", "rolled_back"}:
+        return []
+
+    checkpoint_id = (metadata or {}).get("checkpoint_id", "")
+
+    patch_path = _find_archive_file("team-roster.patch.md", outcome, base_dir, checkpoint_id)
+    if not os.path.isfile(patch_path):
+        return []
+
+    with open(patch_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    try:
+        front_matter = load_record(patch_path)
+    except (ValueError, yaml.YAMLError):
+        return []
+
+    declared_count = front_matter.get("changes_count")
+
+    changes = _extract_machine_change_block(content)
+    if changes is None:
+        return [
+            "MISSING_MACHINE_CHANGE_BLOCK — team-roster.patch.md must contain "
+            "exactly one fenced block with marker 'yaml team-evolution-changes'"
+        ]
+
+    actual_count = len(changes)
+    if declared_count != actual_count:
+        return [
+            f"CHANGES_COUNT_MISMATCH — front matter declares {declared_count} changes but "
+            f"Machine Change Block contains {actual_count}"
+        ]
+
+    return []
+
+
+def rule10_operation_legality(outcome, base_dir, metadata):
+    """Check that each change entry in the Machine Change Block is well-formed.
+
+    Triggered when outcome.status is 'proposal_ready', 'applied', or 'rolled_back'.
+    Validates operation values and fields_modified constraints per operation type.
+    """
+    status = outcome.get("status")
+    if status not in {"proposal_ready", "applied", "rolled_back"}:
+        return []
+
+    checkpoint_id = (metadata or {}).get("checkpoint_id", "")
+
+    patch_path = _find_archive_file("team-roster.patch.md", outcome, base_dir, checkpoint_id)
+    if not os.path.isfile(patch_path):
+        return []
+
+    with open(patch_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    changes = _extract_machine_change_block(content)
+    if changes is None:
+        return []  # Rule 9 already flags the missing block
+
+    valid_operations = {"add_agent", "remove_agent", "modify_agent"}
+    errors = []
+
+    for i, change in enumerate(changes):
+        operation = change.get("operation")
+        fields_modified = change.get("fields_modified")
+
+        if operation not in valid_operations:
+            errors.append(
+                f"INVALID_OPERATION — changes[{i}].operation '{operation}' is not valid"
+            )
+            continue
+
+        if operation in {"add_agent", "remove_agent"}:
+            if fields_modified:
+                errors.append(
+                    f"INVALID_FIELDS_MODIFIED — changes[{i}]: add_agent/remove_agent "
+                    f"must have empty fields_modified"
+                )
+        elif operation == "modify_agent":
+            if not fields_modified:
+                errors.append(
+                    f"INVALID_FIELDS_MODIFIED — changes[{i}]: modify_agent requires "
+                    f"non-empty fields_modified"
+                )
+
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Validator
 # ---------------------------------------------------------------------------
@@ -380,6 +610,16 @@ def validate(record, path, base_dir, skip_filesystem=False):
         rule_results.append(("SKIP", 6, "referenced artifact existence (skipped)", None))
     else:
         run(6, "referenced artifact existence", rule6_referenced_artifacts_exist(outcome, metadata, base_dir))
+
+    run(7, "state artifact hash fields", rule7_hash_fields(outcome, base_dir, metadata))
+
+    if skip_filesystem:
+        rule_results.append(("SKIP", 8, "rollback hash consistency (skipped)", None))
+    else:
+        run(8, "rollback hash consistency", rule8_rollback_hash(outcome, base_dir, metadata))
+
+    run(9, "patch changes_count consistency", rule9_changes_count(outcome, base_dir, metadata))
+    run(10, "patch operation legality", rule10_operation_legality(outcome, base_dir, metadata))
 
     return rule_results, status
 
