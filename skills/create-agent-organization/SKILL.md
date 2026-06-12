@@ -39,6 +39,48 @@ the team, or retrieve memory.
 
 ---
 
+## Input Modes
+
+This skill supports two input modes.
+
+### Mode A — Structured Handoff Package (Preferred)
+
+Use when the user provides `plan-handoff-package.yaml` conforming to
+`schemas/plan-handoff-package-v1.md`.
+
+Before proceeding:
+1. Check that `schema_version` exists and matches `plan-handoff-package-v1`.
+2. Re-derive `readiness` using `plan_handoff_readiness_v1`.
+3. If `ready_for_create_agent_organization` is false, halt and surface the blockers.
+4. Do not proceed until readiness is confirmed.
+
+Record provenance in `.agent-org/provenance.md` with `validation_mode: structured`.
+
+### Mode B — Free-Form Plan Document (Discouraged Fallback)
+
+Use only when the user does not have a structured handoff package.
+
+Behavior:
+- Inform the user that the input is not a schema-validated handoff package.
+- Recommend running `plan-formulation` first to produce a conforming
+  `plan-handoff-package.yaml`.
+- Proceed only after the user explicitly acknowledges the risk and states
+  they want to skip `plan-formulation`.
+
+Override is confirmed when the user:
+- Acknowledges that the input is not a structured handoff package, AND
+- Explicitly states they want to proceed without running plan-formulation.
+
+Override is NOT confirmed by "yes", "ok", or "continue" alone.
+
+When proceeding in Mode B, run a minimum viability check — the plan must
+contain at minimum: mission/objective, scope or non-scope, expected outputs,
+and constraints. If any are missing, ask before generating.
+
+Record provenance in `.agent-org/provenance.md` with `validation_mode: free_form`.
+
+---
+
 ## Step-by-Step Instructions
 
 ### Step 1 — Read and Parse the Plan Document
