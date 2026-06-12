@@ -1,4 +1,5 @@
 # Team Evolution Record v1
+# All paths in this schema are relative to .agent-org/ unless explicitly absolute.
 
 ## 1. Metadata
 schema_version: "team-evolution-v1"
@@ -49,11 +50,14 @@ governance_impact_targets: []
 team_evolution_rules_impact: false
 archive_integrity_impact: false
 cross_checkpoint_dependency: false
-boundary_check_result: pass | stop_mission | stop_governance | stop_team_evolution_rules
+boundary_check_result: pass | stop_mission | stop_governance | stop_team_evolution_rules | stop_archive_integrity
 
 # Boundary check routing rules:
 # stop_mission → outcome: stopped_mission_impact, no patch produced
 # stop_governance / stop_team_evolution_rules → outcome: stopped_governance_impact, no patch produced
+# archive_integrity_impact: true / cross_checkpoint_dependency: true
+#   → boundary_check_result: stop_archive_integrity → outcome: stopped_governance_impact
+#   → no patch produced
 # pass → proceed to Proposed Change
 
 ## 6. Proposed Change
@@ -91,7 +95,7 @@ pre_apply_hash: <sha256 of team-roster.md before patch>
 post_apply_hash: <sha256 of team-roster.md after patch>
 patch_hash: <sha256 of patch file>
 snapshot_hash: <sha256 of snapshot file>
-approval_status: approved
+approval_status_at_application: approved
 application_mode: apply_approved_patch | none
 validator_status: passed | failed | skipped
 application_record_path: "archive/checkpoint-N/team-evolution-application.md"
