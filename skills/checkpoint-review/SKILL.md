@@ -85,8 +85,18 @@ From `schemas/checkpoint-review-v1.md §11`:
 ### Phase 1 — Checkpoint Trigger & Readiness Validation
 
 Read `review-protocol.md` and check whether at least one trigger condition is met.
-Trigger conditions typically include: a deliverable reaching completion, a risk
-threshold being crossed, a phase boundary being reached, or a scheduled review point.
+
+Valid trigger conditions (from `review-protocol.md`) include:
+- A core assumption was confirmed or falsified.
+- A key artifact is ready for a go/no-go decision.
+- The team reached a direction fork that requires choosing a path.
+- A discovery changes risk, scope, method choice, or feasibility.
+
+Not valid by itself:
+- A task step was completed.
+- A subagent finished work.
+- Time passed or a scheduled date arrived.
+- A phase label changed without a decision to make.
 
 If no trigger condition is met, tell the Orchestrator clearly:
 > "No checkpoint trigger condition is met. Continue execution and call this skill
@@ -192,38 +202,43 @@ Do not attempt to auto-repair. Do not renumber existing checkpoints.
 - `archive/checkpoint-N/staging-buffer.md` — copy of `current/staging-buffer.md`
 - `archive/checkpoint-N/handoff-package.md` — the newly verified handoff package
 
-**3. Write `archive/checkpoint-N/review-report.md`**
+**3. Determine escalation status**
 
-Follow the schema from `schemas/checkpoint-review-v1.md §8`. All sections are
-required, including the escalation block.
+Before writing the review report, assess the findings from Phase 2 classification
+and determine the escalation block content using the schema from
+`schemas/checkpoint-review-v1.md §9`. The escalation block is part of the review
+report and must be determined before the report is written, not appended afterward.
 
-**4. Overwrite `current/handoff-package.md`**
+`status: none` is a valid and common result. If status is not `none`, describe the
+issue and set `recommended_next_skill` to the appropriate routing hint. The hint does
+not trigger execution — the Orchestrator decides whether and when to act on it.
+
+**4. Write `archive/checkpoint-N/review-report.md`**
+
+Follow the schema from `schemas/checkpoint-review-v1.md §8`. Write the complete
+report in a single pass, including the escalation block determined in the previous
+step. All sections are required.
+
+**5. Overwrite `current/handoff-package.md`**
 
 Replace with the verified handoff package from Phase 3–4.
 
-**5. Reset `current/staging-buffer.md`**
+**6. Reset `current/staging-buffer.md`**
 
 Clear to empty. Preserve the file header/schema if the template has one.
 
-**6. Append `discard-log.md`**
+**7. Append `discard-log.md`**
 
 Only if there are `discard`-classified entries. Include `entry_id` and rationale
 for each discarded item.
 
-**7. Mark memory candidates**
+**8. Mark memory candidates**
 
 For entries classified `promote_to_memory`, record them in `review-report.md`
 under `memory_promotion_decisions`. Do not write to `memory/decision-log.md`
 unless both strict conditions from `schemas/checkpoint-review-v1.md §10` hold:
 the Orchestrator has explicitly instructed the recording, and the decision is
 a discretionary call not covered by existing governance rules.
-
-**8. Write the escalation block**
-
-Use the schema from `schemas/checkpoint-review-v1.md §9`. `status: none` is a
-valid and common result. If status is not `none`, describe the issue and set
-`recommended_next_skill` to the appropriate routing hint. The hint does not
-trigger execution — the Orchestrator decides whether and when to act on it.
 
 ---
 
@@ -238,3 +253,17 @@ trigger execution — the Orchestrator decides whether and when to act on it.
   `promote_to_memory` is a recommendation, not an action.
 - Escalation is a marking, not an execution. This skill never invokes replanning
   or team-evolution directly.
+
+---
+
+## Completion Message
+
+After all Phase 5 steps complete successfully, report:
+
+- Checkpoint number closed (e.g. "Checkpoint 3 closed")
+- Files written (list)
+- Classification summary (counts per label)
+- Verifier audit result (pass / required revisions count)
+- Escalation status (`none` / `replanning_candidate` / `team_evolution_candidate` / `mission_change_candidate`)
+- Memory candidates marked, if any
+- Recommended next action
