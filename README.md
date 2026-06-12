@@ -69,17 +69,14 @@ project-root/
 
 ## What Is Not Yet Implemented
 
-The `create-agent-organization` skill handles initialization only. The following are defined in the architecture but not yet built as skills:
+The following capabilities are defined in the architecture but not yet built as skills:
 
 | Capability | Status |
 |------------|--------|
-| Checkpoint review | Architecture defined, no skill |
-| Replanning execution | Architecture defined, no skill |
 | Team evolution workflow | Architecture defined, no skill |
 | Memory retrieval | Architecture defined, no skill |
-| Orchestrator system prompt | Defined in team-roster template only |
-
-See `OQ-001` in the architecture doc: the framework is currently a **generator**, not a **manager**. The Orchestrator is expected to operate the framework after initialization.
+| Full organization manager | Addressed by OQ-001 — initializer only for now |
+| Orchestrator manager skill | Defined in team-roster template only |
 
 ---
 
@@ -107,7 +104,7 @@ Does the memory layer eventually need embedding-based retrieval? Current design 
 A skill that guides the Orchestrator through staging-buffer classification, handoff-package production, and archive management.
 
 ✅ **v0.3 — Replanning Skill** _(complete)_
-A skill that classifies a finding's severity and executes the appropriate replanning protocol.
+A skill that consumes checkpoint-review escalation and adjusts the execution plan; handles Moderate plan adjustments and Major mission revision candidates with two-gate human approval.
 
 **v0.4 — Team Evolution Skill** ← _current target_
 A skill that processes team-evolution proposals and updates the roster.
@@ -119,11 +116,14 @@ Addresses OQ-001: a persistent Orchestrator skill that manages the full lifecycl
 
 ## Usage
 
-1. Write a finalized plan document describing your mission, team needs, and artifact backend
-2. Run the `create-agent-organization` skill pointing at your plan
-3. Review `.agent-org/mission-contract.md` and `.agent-org/team-roster.md`
-4. Hand `.agent-org/current/handoff-package.md` to your Orchestrator agent
-5. The Orchestrator reads all governance files and begins execution
+The framework follows a sequential lifecycle:
+
+1. **Plan formulation** — Run the `plan-formulation` skill to turn a rough idea into a reviewed `plan.md` and a canonical `plan-handoff-package.yaml`
+2. **Validate handoff package** — Run `tools/validate_plan_handoff.py` against the generated YAML to confirm schema compliance before proceeding
+3. **Create agent organization** — Run the `create-agent-organization` skill pointing at the validated handoff package; this generates `.agent-org/` with all governance files
+4. **Orchestrator execution** — Hand `.agent-org/current/handoff-package.md` to your Orchestrator agent; it reads all governance files and drives task execution
+5. **Checkpoint review** — At each decision point or phase boundary, run the `checkpoint-review` skill to classify the staging buffer, produce a minimal handoff package, and archive the checkpoint
+6. **Replanning** — Only when `checkpoint-review` escalates a finding (Moderate or Major severity); run the `replanning` skill to adjust the execution plan or initiate a mission revision via two-gate human approval
 
 ---
 
@@ -134,12 +134,20 @@ agent-organization-framework/
 ├── architecture/
 │   └── agent-team-organization-v1.0.md   ← canonical architecture spec
 ├── schemas/
-│   └── plan-handoff-package-v1.md        ← handoff interface contract
+│   ├── plan-handoff-package-v1.md        ← interface contract: plan-formulation → create-agent-organization
+│   ├── checkpoint-review-v1.md           ← interface contract: checkpoint-review outputs
+│   └── replanning-v1.md                  ← interface contract: replanning outputs
 ├── skills/
 │   ├── plan-formulation/
 │   │   └── SKILL.md                      ← upstream planning skill
-│   └── create-agent-organization/
-│       └── SKILL.md                      ← initialization skill
+│   ├── create-agent-organization/
+│   │   └── SKILL.md                      ← initialization skill
+│   ├── checkpoint-review/
+│   │   └── SKILL.md                      ← phase-close and checkpoint skill
+│   └── replanning/
+│       └── SKILL.md                      ← escalation-driven replanning skill
+├── tools/
+│   └── validate_plan_handoff.py          ← schema validator for handoff packages
 ├── templates/                             ← all 10 governance file templates
 ├── docs/                                  ← layer-by-layer documentation
 ├── examples/                              ← (empty, for future worked examples)
