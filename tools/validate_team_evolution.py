@@ -13,6 +13,7 @@ Exit codes:
     1  — one or more rules failed
 """
 
+import argparse
 import os
 import sys
 
@@ -281,8 +282,15 @@ def rule5_checkpoint_scope(outcome, metadata):
     snapshot_path = outcome.get("snapshot_path") or ""
     errors = []
 
-    if checkpoint_id and snapshot_path:
-        # snapshot_path must contain checkpoint_id as a path segment
+    # snapshot_path is required for applied and rolled_back
+    if not snapshot_path:
+        errors.append(
+            f"MISSING_REQUIRED_FIELD — snapshot_path must be non-empty "
+            f"for status '{status}'"
+        )
+        return errors  # skip further checks if snapshot_path is missing
+
+    if checkpoint_id:
         path_parts = snapshot_path.replace("\\", "/").split("/")
         if checkpoint_id not in path_parts:
             errors.append(
@@ -292,10 +300,52 @@ def rule5_checkpoint_scope(outcome, metadata):
 
     if status == "rolled_back":
         rollback_source = outcome.get("rollback_source") or ""
-        if snapshot_path and rollback_source and rollback_source != snapshot_path:
+
+        # rollback_source is required for rolled_back
+        if not rollback_source:
+            errors.append(
+                f"MISSING_REQUIRED_FIELD — rollback_source must be non-empty "
+                f"for status 'rolled_back'"
+            )
+        elif rollback_source != snapshot_path:
             errors.append(
                 f"CROSS_CHECKPOINT_REFERENCE — rollback_source '{rollback_source}' "
                 f"does not match snapshot_path '{snapshot_path}'"
+            )
+
+    return errors
+
+
+def rule6_referenced_artifacts_exist(outcome, metadata, base_dir):
+    """Check that every file in archive_files_referenced actually exists on disk.
+
+    Paths are resolved relative to base_dir/.agent-org/ (or base_dir if
+    .agent-org/ is already part of the path).
+    """
+    status = outcome.get("status")
+    if status not in {"applied", "rolled_back"}:
+        return []
+
+    referenced = outcome.get("archive_files_referenced") or []
+    if not referenced:
+        return []
+
+    errors = []
+    agent_org_dir = os.path.join(base_dir, ".agent-org")
+
+    for ref_path in referenced:
+        # Normalise separators
+        normalised = ref_path.replace("\\", "/")
+
+        # If path already starts with .agent-org/, resolve from base_dir
+        if normalised.startswith(".agent-org/"):
+            full_path = os.path.join(base_dir, normalised)
+        else:
+            full_path = os.path.join(agent_org_dir, normalised)
+
+        if not os.path.isfile(full_path):
+            errors.append(
+                f"DANGLING_ARTIFACT_REFERENCE — referenced file does not exist: {ref_path}"
             )
 
     return errors
@@ -305,8 +355,8 @@ def rule5_checkpoint_scope(outcome, metadata):
 # Validator
 # ---------------------------------------------------------------------------
 
-def validate(record, path):
-    """Run all 5 rules. Returns (results, error_count)."""
+def validate(record, path, base_dir, skip_filesystem=False):
+    """Run all rules. Returns (results, status)."""
     outcome = record.get("outcome") or {}
     metadata = record.get("metadata") or {}
     status = outcome.get("status", "<missing>")
@@ -326,6 +376,11 @@ def validate(record, path):
     run(4, "archive artifact completeness", rule4_archive_artifacts(outcome))
     run(5, "snapshot/rollback checkpoint scope", rule5_checkpoint_scope(outcome, metadata))
 
+    if skip_filesystem:
+        rule_results.append(("SKIP", 6, "referenced artifact existence (skipped)", None))
+    else:
+        run(6, "referenced artifact existence", rule6_referenced_artifacts_exist(outcome, metadata, base_dir))
+
     return rule_results, status
 
 
@@ -341,16 +396,22 @@ def print_report(path, status, rule_results):
     print()
 
     error_count = 0
+    warning_count = 0
+    skipped_count = 0
+
     for tag, rule_num, label, msg in rule_results:
         if tag == "PASS":
             print(f"[PASS] Rule {rule_num}: {label}")
+        elif tag == "SKIP":
+            print(f"[SKIP] Rule {rule_num}: {label}")
+            skipped_count += 1
         else:
             print(f"[FAIL] Rule {rule_num}: {msg}")
             error_count += 1
 
     print()
     print("---")
-    print(f"Result: {error_count} error(s), 0 warning(s)")
+    print(f"Result: {error_count} error(s), {warning_count} warning(s), {skipped_count} rule(s) skipped")
     return error_count
 
 
@@ -359,11 +420,18 @@ def print_report(path, status, rule_results):
 # ---------------------------------------------------------------------------
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: python {sys.argv[0]} <path-to-record.yaml|md>")
-        sys.exit(1)
-
-    path = sys.argv[1]
+    parser = argparse.ArgumentParser(
+        description="Validate a team-evolution record against the team-evolution-v1 schema."
+    )
+    parser.add_argument("record", help="Path to the record file (.yaml or .md)")
+    parser.add_argument(
+        "--skip-filesystem-checks",
+        action="store_true",
+        help="Skip Rule 6 filesystem existence checks (schema-only validation mode).",
+    )
+    args = parser.parse_args()
+    path = args.record
+    skip_filesystem = args.skip_filesystem_checks
 
     try:
         record = load_record(path)
@@ -377,7 +445,8 @@ def main():
         print(f"✗ {e}")
         sys.exit(1)
 
-    rule_results, status = validate(record, path)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(path)))
+    rule_results, status = validate(record, path, base_dir, skip_filesystem=skip_filesystem)
     error_count = print_report(path, status, rule_results)
     sys.exit(0 if error_count == 0 else 1)
 
