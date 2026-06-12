@@ -267,3 +267,97 @@ After all Phase 5 steps complete successfully, report:
 - Escalation status (`none` / `replanning_candidate` / `team_evolution_candidate` / `mission_change_candidate`)
 - Memory candidates marked, if any
 - Recommended next action
+
+---
+
+## Governance State Machine Integration
+
+This section governs how `checkpoint-review` interacts with the Governance State
+Machine defined in `schemas/governance-state-machine-v1.md`.
+
+### At Skill Start
+
+Before executing Phase 1, read `.agent-org/current/governance-state.md`. Verify that
+`current_state` is `EXECUTING` or `REVIEW_REQUIRED`. If the state is a recovery state
+(`PLAN_RECOVERY_REQUIRED`, `TEAM_RECOVERY_REQUIRED`, `HUMAN_DECISION_REQUIRED`) or a
+terminal state (`COMPLETED`, `ABORTED`), halt and surface the inconsistency:
+
+> "governance-state.md shows current_state = `<state>`. checkpoint-review requires
+> EXECUTING or REVIEW_REQUIRED. Inspect governance-state.md before proceeding."
+
+### Assessing team_issue_detected and blocking_capability_gap
+
+During Phase 2 (Staging Buffer Classification) and Phase 5 (Escalation Assessment),
+assess the following two fields for the escalation block output:
+
+**`team_issue_detected: true`** when ANY of the following is observed in the
+staging buffer entries or artifact review:
+- A role failed to produce required outputs due to missing skills or knowledge
+- Verifier identified a systematic quality gap attributable to team composition
+- An upcoming phase requires a capability that no current role possesses
+
+**`blocking_capability_gap: true`** ONLY when ALL of the following hold:
+- `team_issue_detected = true`, AND
+- The IMMEDIATE NEXT execution phase (not a future phase) cannot proceed safely
+  without the missing capability, AND
+- The gap cannot be mitigated by Executor self-adjustment, replanning, or
+  Orchestrator discretion within current role boundaries
+
+`blocking_capability_gap = false` is the default. Do not set it to `true` based on
+future risk prediction or general concern — only when continuation RIGHT NOW is unsafe.
+
+Include both fields in the escalation block of `archive/checkpoint-N/review-report.md`.
+
+### Determining the Next Governance State
+
+After the escalation block is determined, look up the valid transition in
+`schemas/governance-state-machine-v1.md §4` (the `yaml governance-transitions` block):
+
+- Use the current `from` state (read from `governance-state.md`)
+- Use the event derived from the checkpoint-review output:
+  - `team_issue_detected = true` AND `blocking_capability_gap = true` → event: `team_issue_blocking`
+  - `team_issue_detected = true` AND `blocking_capability_gap = false` → event: `team_issue_nonblocking`
+  - Otherwise: derive event from `escalation.severity` (`severity_minor`, `severity_moderate`, `severity_major`)
+
+Look up `(from, event)` in the Transition Table to determine `to` and any `queue_push`.
+
+### Updating governance-state.md
+
+After Phase 5 completes (all archive writes done), update
+`.agent-org/current/governance-state.md`:
+
+- Set `current_state` to the resolved `to` state
+- If the transition has `queue_push`, append that state to `pending_queue`
+- Update `last_transition` with `from`, `to`, `event`, and current ISO 8601 timestamp
+- Update `checkpoint_id` to the current checkpoint N
+
+Do not modify `governance-state.md` before Phase 5 completes — the state update is
+the final step.
+
+### Appending governance-history.md
+
+After updating `governance-state.md`, append the transition to
+`.agent-org/archive/checkpoint-N/governance-history.md`.
+
+If `archive/checkpoint-N/governance-history.md` does not yet exist for this checkpoint,
+create it using `templates/governance-history.md` as the template (substituting the
+correct `checkpoint_id`), then append the transition entry.
+
+Append format:
+
+```yaml
+- timestamp: <ISO8601>
+  from: <previous state>
+  to: <new state>
+  event: <event name>
+```
+
+`governance-history.md` is append-only. Never overwrite existing entries.
+
+### OQ-005: team-context-patch.md Archival
+
+At checkpoint closure (Phase 5, after writing archive files and before resetting
+`current/`), check whether `.agent-org/current/team-context-patch.md` exists. If it
+does, archive it to `archive/checkpoint-N/team-context-patch.md` and remove it from
+`current/`. This resolves OQ-005. Record the archival in the review report
+`open_items` section if the automated archival cannot be confirmed.

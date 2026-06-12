@@ -33,9 +33,11 @@ project-root/
     ├── discard-log.md             ← Auditable record of intentionally discarded information
     ├── current/
     │   ├── staging-buffer.md      ← Running queue during execution (cleared each checkpoint)
-    │   └── handoff-package.md     ← Minimum-necessary context for the next phase
+    │   ├── handoff-package.md     ← Minimum-necessary context for the next phase
+    │   └── governance-state.md    ← Current FSM state (updated each checkpoint)
     ├── archive/
-    │   └── checkpoint-N/          ← Archived staging-buffer and handoff from prior checkpoints
+    │   └── checkpoint-N/          ← Archived staging-buffer, handoff, and governance history
+    │       └── governance-history.md  ← FSM transition log for this checkpoint
     └── memory/
         ├── decision-log.md        ← Cross-task Orchestrator discretionary decisions
         └── case-library/          ← Manually curated non-trivial cases
@@ -96,10 +98,9 @@ Should individual roles (e.g., Python Expert Executor) accumulate their own memo
 **OQ-004 — Vector/Semantic Memory**
 Does the memory layer eventually need embedding-based retrieval? Current design is markdown + manual curation.
 
-**OQ-005 — checkpoint-review patch archival responsibility**
-`checkpoint-review` must archive `current/team-context-patch.md`
-(if present) at checkpoint closure, and remove it from `current/`.
-This was deferred from v0.4. Target: v0.4.1 or v0.5 prep.
+**OQ-005 — checkpoint-review patch archival responsibility** _(Resolved in v0.5)_
+`checkpoint-review` now handles `current/team-context-patch.md` archival as part of
+its Governance State Machine Integration section (`skills/checkpoint-review/SKILL.md`).
 
 ---
 
@@ -116,6 +117,14 @@ A skill that processes team-evolution proposals and updates the roster.
 Includes patch-revision to schemas/team-evolution-v1.md and
 team-evolution-artifacts-v1.md, validator updates (Rules 11–13),
 and Orchestrator startup rule in architecture spec.
+
+✅ **v0.5 — Governance State Machine** _(complete)_
+A control plane that formalizes valid Orchestrator state transitions across the full
+governance lifecycle. Includes `schemas/governance-state-machine-v1.md` (FSM contract
+with machine-readable Transition Table), `tools/validate_governance_state.py` (Rules
+1–6 validator), `templates/governance-state.md` and `templates/governance-history.md`,
+Governance State Machine Integration sections appended to all four lifecycle skills,
+and resolution of OQ-005 (team-context-patch.md archival hook in checkpoint-review).
 
 **v1.0 — Full Organization Manager**
 Addresses OQ-001: a persistent Orchestrator skill that manages the full lifecycle, not just initialization.
@@ -144,7 +153,8 @@ agent-organization-framework/
 ├── schemas/
 │   ├── plan-handoff-package-v1.md        ← interface contract: plan-formulation → create-agent-organization
 │   ├── checkpoint-review-v1.md           ← interface contract: checkpoint-review outputs
-│   └── replanning-v1.md                  ← interface contract: replanning outputs
+│   ├── replanning-v1.md                  ← interface contract: replanning outputs
+│   └── governance-state-machine-v1.md   ← FSM contract: valid governance state transitions
 ├── skills/
 │   ├── plan-formulation/
 │   │   └── SKILL.md                      ← upstream planning skill
@@ -155,7 +165,8 @@ agent-organization-framework/
 │   └── replanning/
 │       └── SKILL.md                      ← escalation-driven replanning skill
 ├── tools/
-│   └── validate_plan_handoff.py          ← schema validator for handoff packages
+│   ├── validate_plan_handoff.py          ← schema validator for handoff packages
+│   └── validate_governance_state.py      ← schema validator for governance-state.md and governance-history.md
 ├── templates/                             ← all 10 governance file templates
 ├── docs/                                  ← layer-by-layer documentation
 ├── examples/                              ← (empty, for future worked examples)

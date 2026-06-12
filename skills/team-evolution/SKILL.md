@@ -345,3 +345,61 @@ After the final phase completes, report:
 - `team_context_patch_generated` (if `status = applied`)
 - `recommended_followup` and rationale
 - Next recommended action for the Orchestrator
+
+---
+
+## Governance State Machine Integration
+
+This section governs how `team-evolution` updates the Governance State Machine defined
+in `schemas/governance-state-machine-v1.md`.
+
+### After Skill Completes (Final Phase)
+
+After all artifact writes are complete, derive the FSM event from the skill outcome:
+
+| `outcome.status` | Condition | FSM event |
+|------------------|-----------|-----------|
+| `applied` | — | `team_evolution_applied` |
+| `no_change_recommended` | — | `team_evolution_no_change_recommended` |
+| `proposal_ready` | `human_approval_required: true` | `team_evolution_proposal_human_required` |
+| `stopped_mission_impact` | — | `team_evolution_stopped_mission` |
+| `stopped_governance_impact` | — | `team_evolution_stopped_governance` |
+| `deferred_insufficient_evidence` | — | `team_evolution_deferred` |
+| `rejected_invalid_trigger` | — | `team_evolution_deferred` |
+| `rolled_back` | — | `team_evolution_applied` |
+
+Look up `(TEAM_RECOVERY_REQUIRED, <event>)` in the Transition Table in
+`schemas/governance-state-machine-v1.md §4` to determine the next state.
+
+For `pop_queue_or_EXECUTING`: read `pending_queue` from
+`.agent-org/current/governance-state.md`. If the queue is non-empty, the next state
+is `queue[0]` and that entry is removed. If the queue is empty, the next state is
+`EXECUTING`.
+
+### Updating governance-state.md
+
+Update `.agent-org/current/governance-state.md`:
+
+- Set `current_state` to the resolved next state
+- Update `pending_queue` (remove popped entry if applicable)
+- Update `last_transition` with `from: TEAM_RECOVERY_REQUIRED`, resolved `to`, `event`,
+  and current ISO 8601 timestamp
+
+Do not update `governance-state.md` before all artifact writes are complete.
+
+### Appending governance-history.md
+
+After updating `governance-state.md`, append the transition to
+`.agent-org/archive/checkpoint-N/governance-history.md`. If the file does not exist
+for this checkpoint, create it from `templates/governance-history.md` first.
+
+Append format:
+
+```yaml
+- timestamp: <ISO8601>
+  from: TEAM_RECOVERY_REQUIRED
+  to: <resolved next state>
+  event: <event name>
+```
+
+`governance-history.md` is append-only. Never overwrite existing entries.

@@ -232,3 +232,58 @@ After Phase 4 completes, report:
 - Changes summary (what was adjusted and why)
 - Human approval status (Major only: Gate 1 and Gate 2 outcomes)
 - Next recommended action for the Orchestrator
+
+---
+
+## Governance State Machine Integration
+
+This section governs how `replanning` updates the Governance State Machine defined in
+`schemas/governance-state-machine-v1.md`.
+
+### After Skill Completes (Phase 4)
+
+After all Phase 4 writes are complete, derive the FSM event from the skill outcome:
+
+| `result.status` | FSM event |
+|-----------------|-----------|
+| `adjusted` (checkpoint_plan_adjustment) | `replanning_plan_revised` |
+| `adjusted` (minor — no file writes) | `replanning_minor_adjustment` |
+| `pending_human_approval` | `replanning_mission_revision_candidate` |
+| `blocked` | `replanning_rejected` |
+
+Look up `(PLAN_RECOVERY_REQUIRED, <event>)` in the Transition Table in
+`schemas/governance-state-machine-v1.md §4` to determine the next state.
+
+For `pop_queue_or_EXECUTING`: read `pending_queue` from
+`.agent-org/current/governance-state.md`. If the queue is non-empty, the next state
+is `queue[0]` and that entry is removed. If the queue is empty, the next state is
+`EXECUTING`.
+
+### Updating governance-state.md
+
+Update `.agent-org/current/governance-state.md`:
+
+- Set `current_state` to the resolved next state
+- Update `pending_queue` (remove popped entry if applicable)
+- Update `last_transition` with `from: PLAN_RECOVERY_REQUIRED`, resolved `to`, `event`,
+  and current ISO 8601 timestamp
+
+Do not update `governance-state.md` before Phase 4 completes. If the skill exits
+without writing files (Minor severity), no FSM update is performed.
+
+### Appending governance-history.md
+
+After updating `governance-state.md`, append the transition to
+`.agent-org/archive/checkpoint-N/governance-history.md`. If the file does not exist
+for this checkpoint, create it from `templates/governance-history.md` first.
+
+Append format:
+
+```yaml
+- timestamp: <ISO8601>
+  from: PLAN_RECOVERY_REQUIRED
+  to: <resolved next state>
+  event: <event name>
+```
+
+`governance-history.md` is append-only. Never overwrite existing entries.

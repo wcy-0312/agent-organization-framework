@@ -222,6 +222,16 @@ escalation:
   description: "<string>"        # what the escalation is about; empty string if status is none
   requires_human_approval: <bool>
   recommended_next_skill: "<enum | null>"  # null | replanning | team-evolution | human-review
+
+  # New fields for Governance State Machine integration (v0.5)
+  team_issue_detected: <bool>
+  # Default: false. Set to true when checkpoint-review identifies a team capability issue.
+
+  blocking_capability_gap: <bool>
+  # Default: false. Only meaningful when team_issue_detected = true.
+  # Semantics: the CURRENT execution cannot safely continue because the team
+  # lacks a required capability RIGHT NOW. This is not a future risk prediction.
+  # Backward compatibility: absent field treated as false.
 ```
 
 **`status` values:**

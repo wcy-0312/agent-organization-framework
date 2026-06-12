@@ -225,3 +225,37 @@ template before generating each file.
 | artifact-manifest.md | templates/artifact-manifest.md |
 | staging-buffer.md | templates/staging-buffer.md |
 | handoff-package.md | templates/handoff-package.md |
+| governance-state.md | templates/governance-state.md |
+
+---
+
+## Governance State Machine Integration
+
+As part of Step 3 (Generate `.agent-org/`), also create:
+
+```
+.agent-org/
+└── current/
+    └── governance-state.md    ← FSM initial state
+```
+
+As part of Step 4 (Populate Each File), generate
+`.agent-org/current/governance-state.md` from `templates/governance-state.md` with
+the following initial values:
+
+```yaml
+fsm_version: v1
+checkpoint_id: checkpoint-0
+current_state: EXECUTING
+pending_queue: []
+last_transition:
+  from: null
+  to: EXECUTING
+  event: initialization
+  timestamp: <ISO8601 timestamp of generation>
+```
+
+This file represents the FSM at bootstrap. The Orchestrator will update it at each
+subsequent checkpoint, replanning, or team-evolution cycle.
+
+Include `current/governance-state.md` in the files-created count reported in Step 5.
