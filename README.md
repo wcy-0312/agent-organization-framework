@@ -13,6 +13,8 @@ Most multi-agent systems either have no governance (chaos at scale) or too much 
 - **Separation of concerns** — governance files live in `.agent-org/`, task artifacts live in the workspace; never mixed
 - **Rules from practice** — patterns must appear in 3+ cases before becoming rules; no top-down rule invention
 
+This framework also includes an upstream plan-formulation skill that helps users turn early ideas into structured, reviewable plans and canonical handoff packages ready for agent organization creation.
+
 ---
 
 ## Architecture Overview
@@ -53,6 +55,8 @@ project-root/
 ## What Is Implemented (v0.1)
 
 - [x] Architecture specification (`architecture/agent-team-organization-v1.0.md`)
+- [x] `plan-formulation` skill — turns rough ideas into reviewable plan documents and canonical handoff packages
+- [x] `schemas/plan-handoff-package-v1.md` — interface contract between plan-formulation and create-agent-organization
 - [x] `create-agent-organization` skill — generates `.agent-org/` from a finalized plan
 - [x] All 10 governance templates (`templates/`)
 - [x] Layer documentation (`docs/`)
@@ -125,9 +129,13 @@ Addresses OQ-001: a persistent Orchestrator skill that manages the full lifecycl
 agent-organization-framework/
 ├── architecture/
 │   └── agent-team-organization-v1.0.md   ← canonical architecture spec
+├── schemas/
+│   └── plan-handoff-package-v1.md        ← handoff interface contract
 ├── skills/
+│   ├── plan-formulation/
+│   │   └── SKILL.md                      ← upstream planning skill
 │   └── create-agent-organization/
-│       └── SKILL.md                       ← initialization skill
+│       └── SKILL.md                      ← initialization skill
 ├── templates/                             ← all 10 governance file templates
 ├── docs/                                  ← layer-by-layer documentation
 ├── examples/                              ← (empty, for future worked examples)
