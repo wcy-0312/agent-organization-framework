@@ -1,0 +1,52 @@
+# Template for plan-handoff-package.yaml
+# Canonical source — see schemas/plan-handoff-package-v1.md for field definitions
+
+schema_version: "plan-handoff-package-v1"   # required; do not change
+
+project_title: "<string>"                   # short human-readable name, e.g. "Data Pipeline Refactor"
+project_stage: "<string>"                   # e.g. "pre-kickoff", "phase-1", "mid-project"
+plan_status: "draft"                        # draft | review_pending | approved | confirmed
+
+required_capabilities:
+  - capability: "<string>"                  # what the team must be able to do, e.g. "parallel file transformation"
+    purpose: "<string>"                     # why this capability is needed in this project
+    criticality: "high"                     # high | medium | low
+
+suggested_workstreams:
+  - id: "WS-1"                             # unique identifier; increment for each workstream
+    name: "<string>"                        # short label, e.g. "Data Ingestion"
+    objective: "<string>"                   # what this workstream must accomplish
+    required_capabilities:
+      - "<capability-string>"               # must match a capability string from required_capabilities
+    notes_for_organization_design: "<string>"  # structural observations for team design; not task instructions
+
+information_continuity_requirements:
+  - id: "ICR-1"                            # unique identifier; increment for each requirement
+    area: "<string>"                        # domain or topic area, e.g. "data model", "auth constraints"
+    must_persist: "<string>"               # the information, relationship, or distinction that must not be lost
+                                           # subject must be information/relationship/distinction — not an artifact or file
+    importance: "high"                     # high | medium | low
+    blocks_create_agent_organization: false # true if this must be resolved before create-agent-organization can proceed
+
+open_questions:
+  - id: "OQ-1"                            # unique identifier; increment for each question
+    question: "<string>"                   # the unresolved question
+    owner: "<string>"                      # role name, person name, or "producer"
+    blocks_create_agent_organization: false # true if create-agent-organization cannot proceed without the answer
+
+decision_log:
+  - id: "DL-1"                            # unique identifier; increment for each decision
+    decision: "<string>"                   # what was decided
+    rationale: "<string>"                  # why this decision was made
+    status: "confirmed"                    # confirmed | assumed | pending
+    required_for_create_agent_organization: false  # true if a pending status here blocks organization creation
+
+# DO NOT AUTHOR MANUALLY — derived by plan-formulation using plan_handoff_readiness_v1
+# See schemas/plan-handoff-package-v1.md §9–§10 for the derivation rule
+readiness:
+  ready_for_create_agent_organization: false         # derived; do not set by hand
+  derivation_rule: "plan_handoff_readiness_v1"       # must match the rule name in the schema
+  blockers:                                          # empty list when ready_for_create_agent_organization is true
+    - type: "<string>"                               # "open_question" | "continuity_requirement" | "decision"
+      ref: "<id>"                                    # e.g. OQ-1, ICR-1, DL-1
+      reason: "<string>"                             # why this entry blocks readiness
