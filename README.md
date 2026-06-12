@@ -96,6 +96,11 @@ Should individual roles (e.g., Python Expert Executor) accumulate their own memo
 **OQ-004 — Vector/Semantic Memory**
 Does the memory layer eventually need embedding-based retrieval? Current design is markdown + manual curation.
 
+**OQ-005 — checkpoint-review patch archival responsibility**
+`checkpoint-review` must archive `current/team-context-patch.md`
+(if present) at checkpoint closure, and remove it from `current/`.
+This was deferred from v0.4. Target: v0.4.1 or v0.5 prep.
+
 ---
 
 ## Roadmap
@@ -106,8 +111,11 @@ A skill that guides the Orchestrator through staging-buffer classification, hand
 ✅ **v0.3 — Replanning Skill** _(complete)_
 A skill that consumes checkpoint-review escalation and adjusts the execution plan; handles Moderate plan adjustments and Major mission revision candidates with two-gate human approval.
 
-**v0.4 — Team Evolution Skill** ← _current target_
+✅ **v0.4 — Team Evolution Skill** _(complete)_
 A skill that processes team-evolution proposals and updates the roster.
+Includes patch-revision to schemas/team-evolution-v1.md and
+team-evolution-artifacts-v1.md, validator updates (Rules 11–13),
+and Orchestrator startup rule in architecture spec.
 
 **v1.0 — Full Organization Manager**
 Addresses OQ-001: a persistent Orchestrator skill that manages the full lifecycle, not just initialization.
